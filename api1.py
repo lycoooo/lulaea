@@ -21,145 +21,50 @@ headers = {
 }
 
 params = {
-    "page": 1,
-    "pageSize": 10
+    'page': "1",
+    'pageSize': "10"
 }
 
 last_api1 = 0
 next_api2 = None
 
-
-def debug_response(name, response):
-    """Print useful information about the response."""
-    print(f"\n----- {name} -----")
-    print("Status Code :", response.status_code)
-    print("URL         :", response.url)
-    print("Content-Type:", response.headers.get("Content-Type"))
-
-    text = response.text.strip()
-
-    if not text:
-        print("Response: <EMPTY>")
-        return None
-
-    try:
-        return response.json()
-    except ValueError:
-        print("Response is NOT JSON.")
-        print("-" * 60)
-        print(text[:1000])  # Print first 1000 chars
-        print("-" * 60)
-        return None
-
-
 while True:
     now = int(time.time())
 
+    # Live countdown
     api1_wait = max(0, 20 - (now - last_api1))
-    api2_wait = max(0, (next_api2 - now) if next_api2 else 0)
+    api2_wait = max(0, (next_api2 - now) if next_api2 is not None else 0)
+    print(f"\r[API1 in {api1_wait:>3}s]  [API2 in {api2_wait:>3}s]", end="", flush=True)
 
-    print(
-        f"\r[API1 in {api1_wait:>3}s]  [API2 in {api2_wait:>3}s]",
-        end="",
-        flush=True
-    )
-
-    # ===========================
-    # API 1
-    # ===========================
+    # API 1 every 20 seconds
     if now - last_api1 >= 20:
         print()
-
         try:
-            response1 = requests.post(
-                api1,
-                headers=headers,
-                timeout=15
-            )
-
-            data1 = debug_response("API1", response1)
-
-            if data1:
-                d = data1.get("data", {})
-                print(
-                    f"[API1] "
-                    f"code={data1.get('code')} | "
-                    f"success={d.get('success')} | "
-                    f"failed={d.get('failed')} | "
-                    f"total={d.get('total')} | "
-                    f"msg={data1.get('msg')}"
-                )
-
-        except requests.exceptions.RequestException as e:
-            print("API1 Request Error:", e)
+            response1 = requests.post(api1, headers=headers, timeout=15)
+            data1 = response1.json()
+            d1 = data1.get("data", {})
+            print(f"[API1] code={data1.get('code')} | success={d1.get('success')} | failed={d1.get('failed')} | total={d1.get('total')} | msg={data1.get('msg')}")
+        except Exception as e:
+            print("API1 Error:", e)
 
         last_api1 = now
 
-    # ===========================
-    # API 2
-    # ===========================
+    # API 2 every 90 seconds
     if next_api2 is None or now >= next_api2:
         print()
-
         try:
-            response2 = requests.get(
-                api2,
-                params=params,
-                headers=headers,
-                timeout=15
-            )
-
-            data2 = debug_response("API2", response2)
-
-            if data2:
-                d = data2.get("data", {})
-
-                print("=" * 60)
-                print(
-                    f"[API2] "
-                    f"code={data2.get('code')} | "
-                    f"msg={data2.get('msg')}"
-                )
-
-                print(
-                    f"To be recharged: {d.get('to_be_recharged')}"
-                )
-                print(
-                    f"Partial recharge: {d.get('partial_recharge')}"
-                )
-                print(
-                    f"Success orders: {d.get('success_order')}"
-                )
-                print(
-                    f"Fail orders: {d.get('fail_order')}"
-                )
-                print(
-                    f"Incoming: {d.get('incoming_amount')}"
-                )
-                print(
-                    f"Outgoing: {d.get('outgoing_amount')}"
-                )
-                print(
-                    f"Total: {d.get('total_amount')}"
-                )
-                print(
-                    f"Account amount: {d.get('total_account_amount')}"
-                )
-
-                for acc in d.get("list", []):
-                    print(
-                        f"Account: {acc.get('account')} | "
-                        f"Status: {acc.get('status')} | "
-                        f"Today Buy: {acc.get('todayBuy')} | "
-                        f"Today Success: {acc.get('todaySuccessBuy')} | "
-                        f"Success Money: {acc.get('todaySuccessMoney')} | "
-                        f"Total Amount: {acc.get('totalAmount')}"
-                    )
-
-                print("=" * 60)
-
-        except requests.exceptions.RequestException as e:
-            print("API2 Request Error:", e)
+            response2 = requests.get(api2, params=params, headers=headers, timeout=15)
+            data2 = response2.json()
+            d2 = data2.get("data", {})
+            print("=" * 60)
+            print(f"[API2] code={data2.get('code')} | msg={data2.get('msg')}")
+            print(f"To be recharged: {d2.get('to_be_recharged')} | Partial recharge: {d2.get('partial_recharge')} | Success orders: {d2.get('success_order')} | Fail orders: {d2.get('fail_order')}")
+            print(f"Incoming: {d2.get('incoming_amount')} | Outgoing: {d2.get('outgoing_amount')} | Total: {d2.get('total_amount')} | Account amount: {d2.get('total_account_amount')}")
+            for acc in d2.get("list", []):
+                print(f"   Account: {acc.get('account')} | Status: {acc.get('status')} | Today buy: {acc.get('todayBuy')} | Today success: {acc.get('todaySuccessBuy')} | Success money: {acc.get('todaySuccessMoney')} | Total amount: {acc.get('totalAmount')}")
+            print("=" * 60)
+        except Exception as e:
+            print("API2 Error:", e)
 
         next_api2 = now + 90
 
