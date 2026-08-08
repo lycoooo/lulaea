@@ -18,14 +18,18 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Hongda-Pay Bot is running in the background! 🚀"
+    return "Hongda-Pay Bot is running in the background and sending to Telegram! 🚀"
 
 # --- YOUR ORIGINAL BOT CLASS ---
 class HongdaPayClient:
-    def __init__(self, email, password):
+    def __init__(self, email, password, tg_token, tg_chat_id):
         self.email = email
         self.password = password
         self.base_url = "http://apk.hongda-pay.com"
+        
+        # Telegram Setup
+        self.tg_token = tg_token
+        self.tg_chat_id = tg_chat_id
         
         self.session = requests.Session()
         
@@ -45,6 +49,29 @@ class HongdaPayClient:
         self.session.cookies.set('cardToken', 'N093YytDSHlHWTlNYzF3NlZjT0VpR09LS2VCUjBtaGNnb0NnWXpMY2FkU0N2and2TTgzTkY1WDhteDFsT0tEL0pLRm5RenZoU0xpREVtTzhvdnluSjZ1V09sUkwxSVVEMi9QTHVpSy96MVB6My9kdFFyQjNKYUJQZmROOVlmbEd6NC9lNS94VUpycER3b0o1OTI2TFpkVFJWQlhZQU5MYWYyVXBldlhzeWpOTWcxNy9rVUZoRExtVzB0L1NlME52')
         self.session.cookies.set('account', '09942715322')
         self.session.cookies.set('loginInfo', '{"email":"greyburn2020@gmail.com","password":"200202","rememberPassword":true,"i18n":"zh-CN"}')
+
+    def send_telegram_msg(self, text, use_monospace=False):
+        """Sends a message to the specified Telegram Chat."""
+        if not self.tg_chat_id or self.tg_chat_id == "YOUR_CHAT_ID_HERE":
+            logging.warning("Telegram CHAT_ID not set. Skipping Telegram notification.")
+            return
+
+        url = f"https://api.telegram.org/bot{self.tg_token}/sendMessage"
+        
+        if use_monospace:
+            text = f"<pre>{text}</pre>"
+            
+        payload = {
+            "chat_id": self.tg_chat_id,
+            "text": text,
+            "parse_mode": "HTML"
+        }
+        
+        try:
+            response = requests.post(url, json=payload)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Failed to send Telegram message: {e}")
 
     def login(self):
         url = f"{self.base_url}/api/base/web/login"
@@ -70,10 +97,12 @@ class HongdaPayClient:
             self.session.cookies.set('gcash-token', token)
             
             logging.info("Successfully retrieved and applied new token.")
+            self.send_telegram_msg("🔄 <b>System Update:</b> Successfully logged in and refreshed token!")
             return True
             
         except requests.exceptions.RequestException as e:
             logging.error(f"Login failed: {e}")
+            self.send_telegram_msg(f"❌ <b>Login Failed:</b> {e}")
             return False
 
     def get_account_list(self, retry=True):
@@ -85,6 +114,7 @@ class HongdaPayClient:
             response.raise_for_status()
             json_data = response.json()
             
+            # --- CODE 7 CHECK FOR API 2 ---
             if json_data.get("code") == 7:
                 if retry:
                     logging.warning("⚠️ API 2: Token expired (Code 7 detected). Re-authenticating...")
@@ -97,29 +127,38 @@ class HongdaPayClient:
             data = json_data.get("data", {})
             accounts = data.get("list", [])
             
-            dashboard = "\n" + "="*70 + "\n"
-            dashboard += f"  ACCOUNT SUMMARY DASHBOARD  |  Total Accounts: {data.get('total', 0)}\n"
-            dashboard += "="*70 + "\n"
-            dashboard += f"  Incoming Amount : {data.get('incoming_amount', 0):,}\n"
-            dashboard += f"  Total Amount    : {data.get('total_amount', 0):,}\n"
-            dashboard += "-"*70 + "\n"
-            dashboard += f"  {'ACCOUNT NO.':<15} | {'STATUS':<8} | {'TODAY BUY':<10} | {'TODAY SUCCESS':<15}\n"
-            dashboard += "-"*70 + "\n"
+            # --- ULTRA-PRO TELEGRAM DASHBOARD DESIGN ---
+            msg = "⚡ <b>FINANCIAL OPERATIONS DASHBOARD</b> ⚡\n"
+            msg += "━━━━━━━━━━━━━━━━━━━━━━━\n"
+            msg += f"🌐 <b>System Overview</b>\n"
+            msg += f"• Total Accounts Active: <code>{data.get('total', 0)}</code>\n"
+            msg += f"• Incoming Vol: <code>₱{data.get('incoming_amount', 0):,}</code>\n"
+            msg += f"• Outgoing Vol: <code>₱{abs(data.get('outgoing_amount', 0)):,}</code>\n"
+            msg += f"• Net Balance: <code>₱{data.get('total_amount', 0):,}</code>\n"
+            msg += f"• Account Pool Val: <code>₱{data.get('total_account_amount', 0):,}</code>\n"
+            msg += f"• Queue State: Recharged ({data.get('to_be_recharged', 0)}) | Partial ({data.get('partial_recharge', 0)})\n"
+            msg += "━━━━━━━━━━━━━━━━━━━━━━━\n"
+            msg += f"📋 <b>Active Accounts Report</b>\n"
             
             if accounts:
-                for acc in accounts:
-                    account = acc.get("account", "N/A")
-                    status = acc.get("status", 0)
-                    today_buy = acc.get("todayBuy", 0)
-                    today_success = acc.get("todaySuccessMoney", 0)
-                    dashboard += f"  {account:<15} | {status:<8} | {today_buy:<10} | {today_success:,}\n"
+                for index, acc in enumerate(accounts, 1):
+                    msg += f"\n<b>#{index} 📱 <code>{acc.get('account')}</code></b>\n"
+                    msg += f"├ Status: <code>{acc.get('status', 'N/A')}</code> | Device: <code>{acc.get('deviceStatus', 'N/A')}</code>\n"
+                    msg += f"├ <b>Today Performance:</b>\n"
+                    msg += f"│  • Buy Volume: <code>{acc.get('todayBuy')}</code> (Success: <b>{acc.get('todaySuccessBuy')}</b>)\n"
+                    msg += f"│  • Success Revenue: <code>₱{acc.get('todaySuccessMoney', 0):,}</code>\n"
+                    msg += f"├ <b>Monthly Metrics:</b>\n"
+                    msg += f"│  • Success Buys: <code>{acc.get('moonSuccessBuy')}</code>\n"
+                    msg += f"│  • Success Payout: <code>₱{acc.get('moonSuccessMoney', 0):,}</code>\n"
+                    msg += f"└ <b>Limits & Reserves:</b>\n"
+                    msg += f"   • Today Limit Left: <code>₱{acc.get('paymentTodayLimitMoney', 0):,}</code>\n"
+                    msg += f"   • Month Limit OK: <code>₱{acc.get('paymentMoonLimitSuccessMoney', 0):,}</code>\n"
+                    msg += f"   • Incoming Pool: <code>₱{acc.get('incomingAmount', 0):,}</code>\n"
             else:
-                dashboard += "  No accounts found.\n"
+                msg += "⚠️ No active accounts reporting.\n"
                 
-            dashboard += "="*70
-            
-            logging.info("✅ API 2 (Account List) Processed Successfully:")
-            print(dashboard)
+            logging.info("✅ API 2 Processed & Formatted Successfully")
+            self.send_telegram_msg(msg, use_monospace=False)
             
         except requests.exceptions.RequestException as e:
             logging.error(f"API 2 failed: {e}")
@@ -134,6 +173,7 @@ class HongdaPayClient:
             response.raise_for_status()
             json_data = response.json()
             
+            # --- CODE 7 CHECK FOR API 3 ---
             if json_data.get("code") == 7:
                 if retry:
                     logging.warning("⚠️ API 3: Token expired (Code 7 detected). Re-authenticating...")
@@ -148,8 +188,10 @@ class HongdaPayClient:
             failed = data.get("failed", 0)
             total = data.get("total", 0)
             
-            ping_stats = f"[ PING STATUS ] Total: {total} | Success: {success} | Failed: {failed}"
-            logging.info(f"✅ API 3 {ping_stats}")
+            ping_stats = f"📡 <b>PING STATUS</b>\nTotal: {total} | Success: {success} | Failed: {failed}"
+            logging.info(f"✅ API 3: Total: {total} | Success: {success} | Failed: {failed}")
+            
+            self.send_telegram_msg(ping_stats)
             
         except requests.exceptions.RequestException as e:
             logging.error(f"API 3 failed: {e}")
@@ -158,6 +200,7 @@ class HongdaPayClient:
 
     def start_loop(self, interval=50):
         logging.info(f"Starting background loop every {interval} seconds...\n")
+        self.send_telegram_msg("🟢 <b>Bot Started:</b> Beginning tracking loop.")
         while True:
             self.get_account_list()
             self.ping_user()
@@ -172,7 +215,10 @@ class HongdaPayClient:
 
 # --- BACKGROUND THREAD RUNNER ---
 def run_bot_in_background():
-    client = HongdaPayClient("greyburn2020@gmail.com", "200202")
+    TG_TOKEN = "8919242938:AAH-5Ent8nmbtP_-O-K0RmzbDAhGuzl5nnw"
+    TG_CHAT_ID = "5295241896"
+    
+    client = HongdaPayClient("greyburn2020@gmail.com", "200202", TG_TOKEN, TG_CHAT_ID)
     if client.login():
         client.start_loop(interval=50)
     else:
@@ -182,11 +228,12 @@ def run_bot_in_background():
 # Script Execution
 # ==========================================
 if __name__ == "__main__":
-    # 1. Start your API bot in a separate background thread
+    port = int(os.environ.get("PORT", 10000))
+    logging.info(f"🚀 Render is looking for port: {port}")
+    
+    logging.info("Starting bot background thread...")
     bot_thread = threading.Thread(target=run_bot_in_background, daemon=True)
     bot_thread.start()
     
-    # 2. Start the dummy Flask web server on the main thread so Render stays happy
-    # Render provides the PORT environment variable automatically
-    port = int(os.environ.get("PORT", 10000))
+    logging.info(f"Starting Flask web server on 0.0.0.0:{port}...")
     app.run(host='0.0.0.0', port=port)
