@@ -2,6 +2,9 @@ import requests
 import time
 import logging
 import sys
+import os
+import threading
+from flask import Flask
 
 # Setup professional logging format
 logging.basicConfig(
@@ -10,6 +13,14 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
+# --- DUMMY WEB SERVER FOR RENDER ---
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Hongda-Pay Bot is running in the background! 🚀"
+
+# --- YOUR ORIGINAL BOT CLASS ---
 class HongdaPayClient:
     def __init__(self, email, password):
         self.email = email
@@ -18,7 +29,6 @@ class HongdaPayClient:
         
         self.session = requests.Session()
         
-        # Define base headers ONCE.
         self.session.headers.update({
             'User-Agent': "Mozilla/5.0 (Linux; Android 10; POCO X3 Build/QKQ1.200512.002; wv) AppleWebKit/537.36",
             'Accept': "application/json, text/plain, */*",
@@ -32,13 +42,11 @@ class HongdaPayClient:
             'Accept-Language': "en-GB,en-US;q=0.9,en;q=0.8",
         })
         
-        # Add static cookies ONCE.
         self.session.cookies.set('cardToken', 'N093YytDSHlHWTlNYzF3NlZjT0VpR09LS2VCUjBtaGNnb0NnWXpMY2FkU0N2and2TTgzTkY1WDhteDFsT0tEL0pLRm5RenZoU0xpREVtTzhvdnluSjZ1V09sUkwxSVVEMi9QTHVpSy96MVB6My9kdFFyQjNKYUJQZmROOVlmbEd6NC9lNS94VUpycER3b0o1OTI2TFpkVFJWQlhZQU5MYWYyVXBldlhzeWpOTWcxNy9rVUZoRExtVzB0L1NlME52')
         self.session.cookies.set('account', '09942715322')
         self.session.cookies.set('loginInfo', '{"email":"greyburn2020@gmail.com","password":"200202","rememberPassword":true,"i18n":"zh-CN"}')
 
     def login(self):
-        """API 1: Logs in and extracts the token to the session."""
         url = f"{self.base_url}/api/base/web/login"
         payload = {
             "email": self.email,
@@ -58,7 +66,6 @@ class HongdaPayClient:
                 logging.error("Login successful but token not found in response.")
                 return False
             
-            # Dynamically update the session with the new token
             self.session.headers.update({'gcash-token': token})
             self.session.cookies.set('gcash-token', token)
             
@@ -70,7 +77,6 @@ class HongdaPayClient:
             return False
 
     def get_account_list(self, retry=True):
-        """API 2: Fetches the web account list. Auto-retries on Code 7."""
         url = f"{self.base_url}/api/etcAccountForm/getWebEtcAccountList"
         params = {'page': "1", 'pageSize': "10"}
         
@@ -79,22 +85,18 @@ class HongdaPayClient:
             response.raise_for_status()
             json_data = response.json()
             
-            # --- TOKEN EXPIRATION CHECK ---
             if json_data.get("code") == 7:
                 if retry:
                     logging.warning("⚠️ API 2: Token expired (Code 7 detected). Re-authenticating...")
                     if self.login():
-                        logging.info("🔄 API 2: Retrying request with new token...")
                         return self.get_account_list(retry=False)
                 else:
-                    logging.error("❌ API 2: Token refresh failed. Skipping this cycle.")
+                    logging.error("❌ API 2: Token refresh failed.")
                     return
-            # ------------------------------
 
             data = json_data.get("data", {})
             accounts = data.get("list", [])
             
-            # Build Dashboard
             dashboard = "\n" + "="*70 + "\n"
             dashboard += f"  ACCOUNT SUMMARY DASHBOARD  |  Total Accounts: {data.get('total', 0)}\n"
             dashboard += "="*70 + "\n"
@@ -125,7 +127,6 @@ class HongdaPayClient:
             logging.error("API 2 returned invalid JSON data.")
 
     def ping_user(self, retry=True):
-        """API 3: Sends a POST request to keep user session alive. Auto-retries on Code 7."""
         url = f"{self.base_url}/api/etcAccountForm/user_ping"
         
         try:
@@ -133,17 +134,14 @@ class HongdaPayClient:
             response.raise_for_status()
             json_data = response.json()
             
-            # --- TOKEN EXPIRATION CHECK ---
             if json_data.get("code") == 7:
                 if retry:
                     logging.warning("⚠️ API 3: Token expired (Code 7 detected). Re-authenticating...")
                     if self.login():
-                        logging.info("🔄 API 3: Retrying request with new token...")
                         return self.ping_user(retry=False)
                 else:
-                    logging.error("❌ API 3: Token refresh failed. Skipping this cycle.")
+                    logging.error("❌ API 3: Token refresh failed.")
                     return
-            # ------------------------------
 
             data = json_data.get("data", {})
             success = data.get("success", 0)
@@ -159,36 +157,36 @@ class HongdaPayClient:
             logging.error("API 3 returned invalid JSON data.")
 
     def start_loop(self, interval=50):
-        """Runs API 2 and API 3 in a continuous loop with a real-time terminal countdown."""
-        logging.info(f"Starting background loop every {interval} seconds. Press Ctrl+C to stop.\n")
-        try:
-            while True:
-                self.get_account_list()
-                self.ping_user()
-                
-                # Real-time countdown loop on a single terminal line
-                for remaining in range(interval, 0, -1):
-                    timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
-                    sys.stdout.write(f"\r{timestamp} [INFO] Next update in: {remaining:02d} seconds... ")
-                    sys.stdout.flush()
-                    time.sleep(1)
-                
-                # Clear the line visually for the next data batch
-                sys.stdout.write("\n")
-                
-        except KeyboardInterrupt:
+        logging.info(f"Starting background loop every {interval} seconds...\n")
+        while True:
+            self.get_account_list()
+            self.ping_user()
+            
+            for remaining in range(interval, 0, -1):
+                timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+                sys.stdout.write(f"\r{timestamp} [INFO] Next update in: {remaining:02d} seconds... ")
+                sys.stdout.flush()
+                time.sleep(1)
+            
             sys.stdout.write("\n")
-            logging.info("Loop stopped by user. Exiting gracefully.")
-            sys.exit(0)
+
+# --- BACKGROUND THREAD RUNNER ---
+def run_bot_in_background():
+    client = HongdaPayClient("greyburn2020@gmail.com", "200202")
+    if client.login():
+        client.start_loop(interval=50)
+    else:
+        logging.error("Bot thread terminated due to initial login failure.")
 
 # ==========================================
 # Script Execution
 # ==========================================
 if __name__ == "__main__":
-    client = HongdaPayClient("greyburn2020@gmail.com", "200202")
+    # 1. Start your API bot in a separate background thread
+    bot_thread = threading.Thread(target=run_bot_in_background, daemon=True)
+    bot_thread.start()
     
-    # We always do an initial login to get the first token
-    if client.login():
-        client.start_loop(interval=50)
-    else:
-        logging.error("Script terminated due to initial login failure.")
+    # 2. Start the dummy Flask web server on the main thread so Render stays happy
+    # Render provides the PORT environment variable automatically
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
