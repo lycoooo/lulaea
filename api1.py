@@ -151,6 +151,7 @@ class HongdaPayClient:
                     msg += f"│  • Success Buys: <code>{acc.get('moonSuccessBuy')}</code>\n"
                     msg += f"│  • Success Payout: <code>₱{acc.get('moonSuccessMoney', 0):,}</code>\n"
                     msg += f"└ <b>Limits & Reserves:</b>\n"
+                    msg += f"   • <b>Account Balance (Total Amount): <code>₱{acc.get('totalAmount', 0):,}</code></b>\n"
                     msg += f"   • Today Limit Left: <code>₱{acc.get('paymentTodayLimitMoney', 0):,}</code>\n"
                     msg += f"   • Month Limit OK: <code>₱{acc.get('paymentMoonLimitSuccessMoney', 0):,}</code>\n"
                     msg += f"   • Incoming Pool: <code>₱{acc.get('incomingAmount', 0):,}</code>\n"
